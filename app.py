@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 # Suppress Google API warnings
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
 os.environ['GLOG_minloglevel'] = '2'
+
+# Detect AWS Cloud9 environment
+IS_CLOUD9 = os.environ.get('C9_USER') is not None or os.environ.get('AWS_CLOUD9_USER') is not None
+if IS_CLOUD9:
+    logger.warning("🌩️ Running on AWS Cloud9 - Optimized for cloud environment")
 logging.getLogger('google').setLevel(logging.ERROR)
 logging.getLogger('googleapiclient').setLevel(logging.ERROR)
 
@@ -132,10 +137,10 @@ def extract_transcript_route():
 
         logger.warning(f"Processing video: {video_id}")
 
-        # Determine if we should use proxy (always use for production-like requests)
-        use_proxy = True  # Always use proxy to avoid bot detection
+        # AWS Cloud9 specific: Try direct first, then proxy as fallback
+        use_proxy = not IS_CLOUD9  # Use direct connection for Cloud9, proxy for others
 
-        # Extract transcript using advanced method with proxy
+        # Extract transcript using advanced method with multiple proxy support
         transcript_segments, video_title = extract_transcript(youtube_url, use_proxy)
 
         if not transcript_segments:
