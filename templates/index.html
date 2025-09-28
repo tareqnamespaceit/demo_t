@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TubeScript AI - YouTube Transcript Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .loading-spinner {
+            border: 3px solid #f3f3f4;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .transcript-segment {
+            transition: all 0.3s ease;
+        }
+        .transcript-segment:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+            transform: translateX(5px);
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+        }
+        .notification.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        .notification.success {
+            background-color: #10b981;
+        }
+        .notification.error {
+            background-color: #ef4444;
+        }
+        .notification.warning {
+            background-color: #f59e0b;
+        }
+    </style>
+</head>
+<body class="min-h-screen gradient-bg">
+    <!-- Header -->
+    <header class="glass-effect">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
+                        <i class="fas fa-video text-blue-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-white">TubeScript AI</h1>
+                        <p class="text-blue-100 text-sm">Advanced YouTube Transcript Generator</p>
+                    </div>
+                </div>
+                <div class="hidden md:flex items-center space-x-6 text-white">
+                    <span class="flex items-center space-x-2">
+                        <i class="fas fa-robot"></i>
+                        <span>AI-Powered</span>
+                    </span>
+                    <span class="flex items-center space-x-2">
+                        <i class="fas fa-language"></i>
+                        <span>Multi-Language</span>
+                    </span>
+                    <span class="flex items-center space-x-2">
+                        <i class="fas fa-download"></i>
+                        <span>Export Ready</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- Input Section -->
+        <div class="max-w-4xl mx-auto mb-8">
+            <div class="glass-effect rounded-2xl p-8">
+                <div class="text-center mb-6">
+                    <h2 class="text-3xl font-bold text-white mb-2">Extract YouTube Transcripts</h2>
+                    <p class="text-blue-100">Get accurate transcripts and AI-powered summaries from any YouTube video</p>
+                </div>
+                
+                <form id="transcript-form" class="space-y-6">
+                    <div class="flex flex-col md:flex-row gap-4">
+                        <div class="flex-1">
+                            <label for="youtube_url" class="block text-white font-medium mb-2">
+                                <i class="fas fa-link mr-2"></i>YouTube URL
+                            </label>
+                            <input 
+                                type="url" 
+                                id="youtube_url" 
+                                name="youtube_url" 
+                                placeholder="https://www.youtube.com/watch?v=..." 
+                                class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                required
+                            >
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-4">
+                        <label class="flex items-center space-x-2 text-white">
+                            <input type="checkbox" id="generate_summary" name="generate_summary" checked class="rounded">
+                            <span>Generate AI Summary</span>
+                        </label>
+                    </div>
+                    
+                    <button 
+                        type="submit" 
+                        id="submit-btn"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-lg transition duration-300 flex items-center justify-center space-x-2"
+                    >
+                        <i class="fas fa-magic"></i>
+                        <span>Generate Transcript & Summarize</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8" style="display: none;">
+            <!-- Video Player -->
+            <div class="lg:col-span-1">
+                <div class="glass-effect rounded-2xl p-6">
+                    <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+                        <i class="fas fa-play-circle mr-2"></i>Video Player
+                    </h3>
+                    <div id="video-container" class="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-video text-gray-400 text-4xl"></i>
+                    </div>
+                    <div id="video-info" class="mt-4 text-white">
+                        <h4 id="video-title" class="font-semibold"></h4>
+                        <p id="video-stats" class="text-blue-100 text-sm mt-1"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transcript -->
+            <div class="lg:col-span-2">
+                <div class="glass-effect rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold text-white flex items-center">
+                            <i class="fas fa-file-text mr-2"></i>Transcript
+                        </h3>
+                        <div class="flex space-x-2">
+                            <button onclick="copyTranscript()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-copy mr-1"></i>Copy
+                            </button>
+                            <button onclick="downloadTranscript()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-download mr-1"></i>Download
+                            </button>
+                        </div>
+                    </div>
+                    <div id="transcript-container" class="bg-white bg-opacity-10 rounded-lg p-4 max-h-96 overflow-y-auto">
+                        <div class="text-center text-gray-300 py-8">
+                            <i class="fas fa-file-text text-4xl mb-2"></i>
+                            <p>Transcript will appear here after processing</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="lg:col-span-3">
+                <div class="glass-effect rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold text-white flex items-center">
+                            <i class="fas fa-brain mr-2"></i>AI Summary
+                        </h3>
+                        <button onclick="copySummary()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                            <i class="fas fa-copy mr-1"></i>Copy Summary
+                        </button>
+                    </div>
+                    <div id="summary-container" class="bg-white bg-opacity-10 rounded-lg p-4">
+                        <div class="text-center text-gray-300 py-8">
+                            <i class="fas fa-brain text-4xl mb-2"></i>
+                            <p>AI summary will appear here after processing</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
+            <div class="glass-effect rounded-2xl p-8 text-center max-w-md">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <h3 class="text-xl font-bold text-white mb-2">Processing Video</h3>
+                <p class="text-blue-100 mb-2">Extracting transcript and generating summary...</p>
+                <p class="text-blue-200 text-sm">This may take 30-60 seconds for longer videos</p>
+                <div class="mt-4 text-xs text-blue-300">
+                    <p>• Downloading captions</p>
+                    <p>• Processing transcript</p>
+                    <p>• Generating AI summary</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Notification Container -->
+    <div id="notification" class="notification"></div>
+
+    <script>
+        let currentTranscript = [];
+        let currentSummary = '';
+        let currentVideoId = '';
+        let currentVideoTitle = '';
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.classList.add('show');
+
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 5000);
+        }
+
+        // Show loading with timeout protection
+        function showLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.style.display = 'flex';
+
+            // Auto-hide after 60 seconds to prevent infinite loading
+            setTimeout(() => {
+                if (overlay.style.display === 'flex') {
+                    hideLoading();
+                    showNotification('Request timed out. Please try again.', 'error');
+                }
+            }, 60000);
+        }
+
+        // Hide loading
+        function hideLoading() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        // Extract video ID from YouTube URL
+        function extractVideoId(url) {
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+                /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/
+            ];
+
+            for (const pattern of patterns) {
+                const match = url.match(pattern);
+                if (match) return match[1];
+            }
+            return null;
+        }
+
+        // Update video player
+        function updateVideoPlayer(videoId, title) {
+            const videoContainer = document.getElementById('video-container');
+            const videoTitle = document.getElementById('video-title');
+            const videoStats = document.getElementById('video-stats');
+
+            if (videoId) {
+                videoContainer.innerHTML = `
+                    <iframe
+                        width="100%"
+                        height="100%"
+                        src="https://www.youtube.com/embed/${videoId}"
+                        frameborder="0"
+                        allowfullscreen
+                        class="rounded-lg"
+                    ></iframe>
+                `;
+                videoTitle.textContent = title || 'YouTube Video';
+                videoStats.textContent = `Video ID: ${videoId}`;
+            }
+        }
+
+        // Update transcript display
+        function updateTranscriptDisplay(transcript) {
+            const container = document.getElementById('transcript-container');
+
+            if (!transcript || transcript.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-gray-300 py-8">
+                        <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
+                        <p>No transcript available for this video</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            transcript.forEach(segment => {
+                html += `
+                    <div class="transcript-segment flex items-start space-x-3 p-3 rounded-lg mb-2">
+                        <span class="text-blue-300 font-mono text-sm min-w-[60px]">${segment.timestamp}</span>
+                        <span class="text-white flex-1">${segment.text}</span>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Update summary display
+        function updateSummaryDisplay(summary) {
+            const container = document.getElementById('summary-container');
+
+            if (!summary) {
+                container.innerHTML = `
+                    <div class="text-center text-gray-300 py-8">
+                        <i class="fas fa-brain text-4xl mb-2"></i>
+                        <p>No summary available</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Format summary with markdown-like styling
+            let formattedSummary = summary
+                .replace(/\*\*(.*?)\*\*/g, '<strong class="text-blue-300">$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em class="text-blue-200">$1</em>')
+                .replace(/\n/g, '<br>');
+
+            container.innerHTML = `<div class="text-white whitespace-pre-wrap">${formattedSummary}</div>`;
+        }
+
+        // Copy transcript to clipboard
+        function copyTranscript() {
+            if (currentTranscript.length === 0) {
+                showNotification('No transcript to copy', 'warning');
+                return;
+            }
+
+            const text = currentTranscript.map(segment =>
+                `${segment.timestamp} ${segment.text}`
+            ).join('\n');
+
+            navigator.clipboard.writeText(text).then(() => {
+                showNotification('Transcript copied to clipboard!', 'success');
+            }).catch(() => {
+                showNotification('Failed to copy transcript', 'error');
+            });
+        }
+
+        // Copy summary to clipboard
+        function copySummary() {
+            if (!currentSummary) {
+                showNotification('No summary to copy', 'warning');
+                return;
+            }
+
+            navigator.clipboard.writeText(currentSummary).then(() => {
+                showNotification('Summary copied to clipboard!', 'success');
+            }).catch(() => {
+                showNotification('Failed to copy summary', 'error');
+            });
+        }
+
+        // Download transcript
+        function downloadTranscript() {
+            if (currentTranscript.length === 0) {
+                showNotification('No transcript to download', 'warning');
+                return;
+            }
+
+            const text = currentTranscript.map(segment =>
+                `${segment.timestamp} ${segment.text}`
+            ).join('\n');
+
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentVideoTitle || 'transcript'}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showNotification('Transcript downloaded!', 'success');
+        }
+
+        // Form submission
+        document.getElementById('transcript-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const youtubeUrl = formData.get('youtube_url');
+            const generateSummary = formData.get('generate_summary') === 'on';
+
+            if (!youtubeUrl) {
+                showNotification('Please enter a YouTube URL', 'error');
+                return;
+            }
+
+            // Validate YouTube URL
+            const videoId = extractVideoId(youtubeUrl);
+            if (!videoId) {
+                showNotification('Please enter a valid YouTube URL', 'error');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                // Add timeout and better error handling
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+
+                const response = await fetch('/extract', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        youtube_url: youtubeUrl,
+                        generate_summary: generateSummary
+                    }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Store current data
+                    currentTranscript = data.transcript || [];
+                    currentSummary = data.summary || '';
+                    currentVideoId = data.video_id || videoId;
+                    currentVideoTitle = data.video_title || 'YouTube Video';
+
+                    // Update displays
+                    updateVideoPlayer(currentVideoId, currentVideoTitle);
+                    updateTranscriptDisplay(currentTranscript);
+                    updateSummaryDisplay(currentSummary);
+
+                    // Show results section
+                    document.getElementById('results-section').style.display = 'grid';
+
+                    // Scroll to results
+                    document.getElementById('results-section').scrollIntoView({
+                        behavior: 'smooth'
+                    });
+
+                    showNotification(`Successfully extracted ${data.total_segments} transcript segments!`, 'success');
+                } else {
+                    showNotification(data.error || 'Failed to extract transcript', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+
+                // Better error messages
+                let errorMessage = 'Network error. Please try again.';
+                if (error.name === 'AbortError') {
+                    errorMessage = 'Request timed out. Please try a shorter video or try again later.';
+                } else if (error.message.includes('HTTP 400')) {
+                    errorMessage = 'Invalid YouTube URL or video has no captions available.';
+                } else if (error.message.includes('HTTP 500')) {
+                    errorMessage = 'Server error. Please try again in a few moments.';
+                } else if (error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Connection failed. Please check your internet connection.';
+                }
+
+                showNotification(errorMessage, 'error');
+            } finally {
+                hideLoading();
+            }
+        });
+
+        // Auto-focus on URL input
+        document.getElementById('youtube_url').focus();
+    </script>
+</body>
+</html>
