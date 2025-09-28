@@ -30,6 +30,3 @@ venv/
 *.log
 db.sqlite3
 media/
-
-# Transcripts
-*.txt
