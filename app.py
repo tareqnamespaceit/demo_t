@@ -130,15 +130,24 @@ def extract_transcript_route():
         elif 'youtu.be/' in youtube_url:
             video_id = youtube_url.split('youtu.be/')[1].split('?')[0]
 
-        logger.warning(f"Processing video: {video_id}")  # Changed to warning level
+        logger.warning(f"Processing video: {video_id}")
 
-        # Extract transcript using advanced method
-        transcript_segments, video_title = extract_transcript(youtube_url)
+        # Determine if we should use proxy (always use for production-like requests)
+        use_proxy = True  # Always use proxy to avoid bot detection
+
+        # Extract transcript using advanced method with proxy
+        transcript_segments, video_title = extract_transcript(youtube_url, use_proxy)
 
         if not transcript_segments:
+            error_msg = 'Could not extract transcript from this video.'
+            if video_title:
+                error_msg += f' Video "{video_title}" may not have captions available or may be restricted.'
+            else:
+                error_msg += ' The video may not have captions available, be private, or be restricted in your region.'
+
             return jsonify({
                 'success': False,
-                'error': 'Could not extract transcript from this video. The video may not have captions available.'
+                'error': error_msg
             }), 400
 
         # Optimize transcript formatting

@@ -43,9 +43,12 @@ def get_youtube_video_id(url: str) -> Optional[str]:
 
     return None
 
-def get_advanced_ydl_opts() -> Dict:
+def get_advanced_ydl_opts(use_proxy: bool = True) -> Dict:
     """
     Get advanced yt-dlp options for better YouTube compatibility
+
+    Args:
+        use_proxy: Whether to use proxy for requests
 
     Returns:
         Dictionary of yt-dlp options
@@ -62,11 +65,11 @@ def get_advanced_ydl_opts() -> Dict:
         'no_warnings': True,
         'extract_flat': False,
         'ignoreerrors': True,
-        'retries': 2,  # Reduced retries for speed
-        'fragment_retries': 2,
-        'sleep_interval': 0.5,  # Faster intervals
-        'max_sleep_interval': 2,
-        'socket_timeout': 30,  # Add timeout
+        'retries': 3,  # Increased for proxy stability
+        'fragment_retries': 3,
+        'sleep_interval': 1,
+        'max_sleep_interval': 5,
+        'socket_timeout': 45,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'referer': 'https://www.youtube.com/',
         'logger': QuietLogger(),  # Use quiet logger
@@ -77,6 +80,28 @@ def get_advanced_ydl_opts() -> Dict:
             }
         }
     }
+
+    # Add proxy configuration if enabled
+    if use_proxy:
+        proxy_url = "http://pclffufy:0tmsp6ud1whi@142.111.48.253:7030/"
+        opts.update({
+            'proxy': proxy_url,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
+            'sleep_interval': 2,  # Slower for proxy to avoid rate limits
+            'max_sleep_interval': 8,
+            'retries': 5,
+            'fragment_retries': 5,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web', 'tv'],  # More client options
+                    'skip': ['dash', 'hls'],
+                    'innertube_host': 'youtubei.googleapis.com',
+                    'innertube_key': None,
+                }
+            }
+        })
+        logger.warning("Using proxy for YouTube access")
 
     # Add cookies if file exists
     if os.path.exists(cookies_file):
@@ -96,18 +121,19 @@ def get_advanced_ydl_opts() -> Dict:
 
     return opts
 
-def extract_transcript_youtube(url: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
+def extract_transcript_youtube(url: str, use_proxy: bool = True) -> Tuple[Optional[List[Dict]], Optional[str]]:
     """
     Extract transcript from YouTube video using yt-dlp
 
     Args:
         url: YouTube video URL
+        use_proxy: Whether to use proxy for requests
 
     Returns:
         Tuple of (transcript_segments, video_title)
     """
     try:
-        logger.info(f"Extracting transcript from: {url}")
+        logger.warning(f"Extracting transcript from: {url}")
 
         # Get video ID for validation
         video_id = get_youtube_video_id(url)
@@ -115,87 +141,138 @@ def extract_transcript_youtube(url: str) -> Tuple[Optional[List[Dict]], Optional
             logger.error("Could not extract video ID from URL")
             return None, None
 
-        # Get yt-dlp options
-        ydl_opts = get_advanced_ydl_opts()
+        # Try multiple approaches: proxy with different configs, then direct
+        approaches = [
+            (True, "android"),  # Proxy with Android client
+            (True, "web"),      # Proxy with Web client
+            (False, "android"), # Direct with Android client
+            (False, "web")      # Direct with Web client
+        ]
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        for attempt, (proxy_enabled, client_type) in enumerate(approaches, 1):
             try:
-                # Extract video info
-                info = ydl.extract_info(url, download=False)
+                logger.warning(f"Attempt {attempt}: {'Proxy' if proxy_enabled else 'Direct'} + {client_type} client")
 
-                if not info:
-                    logger.error("Could not extract video information")
-                    return None, None
+                # Get yt-dlp options with specific client
+                ydl_opts = get_advanced_ydl_opts(proxy_enabled)
 
-                video_title = info.get('title', 'Unknown Title')
-                logger.info(f"Video title: {video_title}")
+                # Override client type for this attempt
+                ydl_opts['extractor_args']['youtube']['player_client'] = [client_type]
 
-                # Look for subtitles
-                subtitles = info.get('subtitles', {})
-                automatic_captions = info.get('automatic_captions', {})
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    try:
+                        # Extract video info
+                        info = ydl.extract_info(url, download=False)
 
-                # Try to get English subtitles first
-                transcript_data = None
-                subtitle_source = None
+                        if not info:
+                            logger.error("Could not extract video information")
+                            if attempt == len(approaches):  # If this was the last attempt
+                                return None, None
+                            continue  # Try next attempt
 
-                # Priority order for subtitle languages
-                lang_priority = ['en', 'en-US', 'en-GB', 'en-CA', 'en-AU']
+                        video_title = info.get('title', 'Unknown Title')
+                        logger.warning(f"Video title: {video_title}")
 
-                # First try manual subtitles
-                for lang in lang_priority:
-                    if lang in subtitles:
-                        transcript_data = subtitles[lang]
-                        subtitle_source = f"manual_{lang}"
-                        logger.info(f"Found manual subtitles in {lang}")
-                        break
+                        # Look for subtitles
+                        subtitles = info.get('subtitles', {})
+                        automatic_captions = info.get('automatic_captions', {})
 
-                # If no manual subtitles, try automatic captions
-                if not transcript_data:
-                    for lang in lang_priority:
-                        if lang in automatic_captions:
-                            transcript_data = automatic_captions[lang]
-                            subtitle_source = f"auto_{lang}"
-                            logger.info(f"Found automatic captions in {lang}")
-                            break
+                        # Try to get English subtitles first
+                        transcript_data = None
+                        subtitle_source = None
 
-                if not transcript_data:
-                    logger.warning("No subtitles or captions found")
-                    return None, video_title
+                        # Priority order for subtitle languages
+                        lang_priority = ['en', 'en-US', 'en-GB', 'en-CA', 'en-AU']
 
-                # Download subtitle content
-                subtitle_content = None
-                for subtitle_format in transcript_data:
-                    if subtitle_format.get('ext') in ['vtt', 'srv3', 'srv2', 'srv1']:
-                        try:
-                            subtitle_url = subtitle_format.get('url')
-                            if subtitle_url:
-                                import requests
-                                response = requests.get(subtitle_url, timeout=30)
-                                if response.status_code == 200:
-                                    subtitle_content = response.text
-                                    logger.info(f"Downloaded subtitle content ({len(subtitle_content)} chars)")
+                        # First try manual subtitles
+                        for lang in lang_priority:
+                            if lang in subtitles:
+                                transcript_data = subtitles[lang]
+                                subtitle_source = f"manual_{lang}"
+                                logger.warning(f"Found manual subtitles in {lang}")
+                                break
+
+                        # If no manual subtitles, try automatic captions
+                        if not transcript_data:
+                            for lang in lang_priority:
+                                if lang in automatic_captions:
+                                    transcript_data = automatic_captions[lang]
+                                    subtitle_source = f"auto_{lang}"
+                                    logger.warning(f"Found automatic captions in {lang}")
                                     break
-                        except Exception as e:
-                            logger.warning(f"Failed to download subtitle format {subtitle_format.get('ext')}: {e}")
-                            continue
 
-                if not subtitle_content:
-                    logger.error("Could not download subtitle content")
-                    return None, video_title
+                        if not transcript_data:
+                            logger.warning("No subtitles or captions found")
+                            if attempt == len(approaches):  # If this was the last attempt
+                                return None, video_title
+                            continue  # Try next attempt
 
-                # Parse subtitle content
-                transcript_segments = parse_subtitle_content(subtitle_content)
+                        # Download subtitle content with proxy support
+                        subtitle_content = None
+                        for subtitle_format in transcript_data:
+                            if subtitle_format.get('ext') in ['vtt', 'srv3', 'srv2', 'srv1']:
+                                try:
+                                    subtitle_url = subtitle_format.get('url')
+                                    if subtitle_url:
+                                        import requests
 
-                if transcript_segments:
-                    logger.info(f"Successfully extracted {len(transcript_segments)} transcript segments")
-                    return transcript_segments, video_title
-                else:
-                    logger.error("Failed to parse subtitle content")
-                    return None, video_title
+                                        # Use proxy for subtitle download if enabled
+                                        proxies = None
+                                        if proxy_enabled:
+                                            proxy_url = "http://pclffufy:0tmsp6ud1whi@142.111.48.253:7030/"
+                                            proxies = {
+                                                'http': proxy_url,
+                                                'https': proxy_url
+                                            }
+
+                                        response = requests.get(
+                                            subtitle_url,
+                                            timeout=30,
+                                            proxies=proxies,
+                                            headers={
+                                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                                            }
+                                        )
+                                        if response.status_code == 200:
+                                            subtitle_content = response.text
+                                            logger.warning(f"Downloaded subtitle content ({len(subtitle_content)} chars)")
+                                            break
+                                except Exception as e:
+                                    logger.warning(f"Failed to download subtitle format {subtitle_format.get('ext')}: {e}")
+                                    continue
+
+                        if not subtitle_content:
+                            logger.error("Could not download subtitle content")
+                            if attempt == len(approaches):  # If this was the last attempt
+                                return None, video_title
+                            continue  # Try next attempt
+
+                        # Parse subtitle content
+                        transcript_segments = parse_subtitle_content(subtitle_content)
+
+                        if transcript_segments:
+                            logger.warning(f"Successfully extracted {len(transcript_segments)} transcript segments")
+                            return transcript_segments, video_title
+                        else:
+                            logger.error("Failed to parse subtitle content")
+                            if attempt == len(approaches):  # If this was the last attempt
+                                return None, video_title
+                            continue  # Try next attempt
+
+                    except Exception as e:
+                        logger.error(f"yt-dlp extraction failed (attempt {attempt}): {e}")
+                        if attempt == len(approaches):  # If this was the last attempt
+                            return None, None
+                        continue  # Try next attempt
 
             except Exception as e:
-                logger.error(f"yt-dlp extraction failed: {e}")
-                return None, None
+                logger.error(f"Configuration error (attempt {attempt}): {e}")
+                if attempt == len(approaches):  # If this was the last attempt
+                    return None, None
+                continue  # Try next attempt
+
+        # If we get here, all attempts failed
+        return None, None
 
     except Exception as e:
         logger.error(f"Transcript extraction error: {e}")
@@ -319,29 +396,30 @@ def seconds_to_timestamp(seconds: float) -> str:
     secs = seconds % 60
     return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
 
-def extract_transcript(url: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
+def extract_transcript(url: str, use_proxy: bool = True) -> Tuple[Optional[List[Dict]], Optional[str]]:
     """
     Main function to extract transcript from YouTube video
 
     Args:
         url: YouTube video URL
+        use_proxy: Whether to use proxy for requests
 
     Returns:
         Tuple of (transcript_segments, video_title)
     """
     try:
-        logger.info(f"Starting transcript extraction for: {url}")
+        logger.warning(f"Starting transcript extraction for: {url}")
 
         # Validate URL
         if not url or not any(domain in url for domain in ['youtube.com', 'youtu.be']):
             logger.error("Invalid YouTube URL")
             return None, None
 
-        # Extract using yt-dlp
-        transcript_result, title = extract_transcript_youtube(url)
+        # Extract using yt-dlp with proxy support
+        transcript_result, title = extract_transcript_youtube(url, use_proxy)
 
         if transcript_result and len(transcript_result) > 0:
-            logger.info(f"Successfully extracted transcript with {len(transcript_result)} segments")
+            logger.warning(f"Successfully extracted transcript with {len(transcript_result)} segments")
             return transcript_result, title
         else:
             logger.warning("No transcript found")
